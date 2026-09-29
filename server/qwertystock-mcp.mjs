@@ -8,7 +8,8 @@
 // Read-only. The server never buys anything, needs no account or key, and
 // sends no credentials. Network access, all over HTTPS:
 //   - https://qwertystock.com/api/v1/...  the public Qwertystock REST API
-//   - thumbnail image URLs that the API itself returns for its items
+//   - thumbnail image URLs that the API returns for its items, and only on
+//     Qwertystock's own hosts (see THUMBNAIL_HOSTS)
 
 import { createInterface } from "node:readline";
 
@@ -24,6 +25,8 @@ const REQUEST_TIMEOUT_MS = 30000;
 const THUMBNAIL_TIMEOUT_MS = 10000;
 const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const THUMBNAIL_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+// Qwertystock serves previews from its own site and from its preview servers on microstock.plus.
+const THUMBNAIL_HOSTS = ["qwertystock.com", "microstock.plus"];
 const SEARCH_DEFAULT_LIMIT = 12;
 const SEARCH_MAX_LIMIT = 80;
 const MAX_THUMBNAILS = 8;
@@ -284,6 +287,11 @@ async function fetchThumbnail(url, signal) {
         return null;
     }
     if (parsed.protocol !== "https:") return null;
+    const host = parsed.hostname.toLowerCase();
+    if (!THUMBNAIL_HOSTS.some(allowed => host === allowed || host.endsWith(`.${allowed}`))) {
+        log(`thumbnail skipped: ${host} is not a Qwertystock host`);
+        return null;
+    }
 
     const timeout = linkedSignal(signal, THUMBNAIL_TIMEOUT_MS);
     try {

@@ -51,7 +51,7 @@ The connector sends data only to Qwertystock, over HTTPS, and sends no credentia
 
 - **Search requests** to `https://qwertystock.com/api/v1/search` and `/api/v1/search/semantic`: your search text, the content type, the page and the number of results.
 - **Item lookups** to `https://qwertystock.com/api/v1/download` with `format: preview`, which is free and returns an item's public details and preview link: the item ID. Search also uses it to fill in prices that the search results leave out.
-- **Thumbnails**: the connector downloads the thumbnail images at the URLs the API returns, which are on Qwertystock's preview servers, and passes them to Claude.
+- **Thumbnails**: the connector downloads the thumbnail images at the URLs the API returns and passes them to Claude. It fetches them only from Qwertystock's own hosts: `qwertystock.com` and its preview servers on `microstock.plus`. These requests send nothing but the image address.
 
 Every request carries the user agent `qwertystock-claude-plugin/<version>`. The plugin stores nothing on your computer, writes no files by itself, reads nothing from your conversation beyond the search text and item IDs above, and has no analytics or telemetry. Requests to Qwertystock are covered by its [Privacy Policy](https://qwertystock.com/html/pages/privacy_policy.html) and [Terms of Service](https://qwertystock.com/html/pages/terms_of_service.html).
 
