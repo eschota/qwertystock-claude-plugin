@@ -5,11 +5,10 @@
 // Transport: MCP stdio, newline-delimited JSON-RPC 2.0 on stdin/stdout.
 // Diagnostics go to stderr only, because stdout carries the protocol.
 //
-// Network access, all over HTTPS:
+// Read-only. The server never buys anything, needs no account or key, and
+// sends no credentials. Network access, all over HTTPS:
 //   - https://qwertystock.com/api/v1/...  the public Qwertystock REST API
-//   - thumbnail image URLs that the API itself returns for search results
-// The optional API key is sent only to https://qwertystock.com, only by the
-// purchase_download tool, as an "Authorization: Bearer" header.
+//   - thumbnail image URLs that the API itself returns for its items
 
 import { createInterface } from "node:readline";
 
@@ -20,13 +19,11 @@ const API_ORIGIN = "https://qwertystock.com";
 const USER_AGENT = `qwertystock-claude-plugin/${SERVER_VERSION} (+https://github.com/eschota/qwertystock-claude-plugin)`;
 const SUPPORTED_PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const CONTENT_TYPES = ["photo", "illustration", "vector", "video"];
-const SIZED_TYPES = new Set(["photo", "illustration", "video"]);
 
 const REQUEST_TIMEOUT_MS = 30000;
 const THUMBNAIL_TIMEOUT_MS = 10000;
 const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const THUMBNAIL_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-const PURCHASE_WAIT_MS = 120000;
 const SEARCH_DEFAULT_LIMIT = 12;
 const SEARCH_MAX_LIMIT = 80;
 const MAX_THUMBNAILS = 8;
@@ -36,14 +33,20 @@ const RESOLUTION_ORDER = ["240P", "SD", "HD", "FHD", "4K", "8K"];
 
 const INSTRUCTIONS = [
     "Qwertystock is a royalty-free stock marketplace with photos, illustrations, vectors and videos.",
-    "Search first with search_media and show watermarked previews; previews are free.",
-    "Use get_item to look up one item by its ID.",
-    "purchase_download spends money from the user's Qwertystock balance: call it only after the user has explicitly confirmed the item ID, the format and the price in USD, and pass that confirmed price as max_price_usd.",
-    "Download links returned by purchase_download are personal; do not publish them."
+    "Search with search_media and look up one item by its ID with get_item.",
+    "Previews are free and carry a watermark.",
+    "These tools never buy anything: to get a full-resolution file, the user buys it themselves on the item page at qwertystock.com."
 ].join(" ");
 
 // ---------------------------------------------------------------------------
 // Tool definitions
+
+const READ_ONLY = {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
+};
 
 const TOOLS = [
     {
@@ -52,8 +55,8 @@ const TOOLS = [
         description: [
             "Search the Qwertystock catalog of royalty-free stock photos, illustrations, vectors and videos.",
             "Describe what should be in the picture or clip in any language: subject, action, setting, mood, style.",
-            "Returns item IDs, titles, sizes, durations, formats with prices in USD, item page links and free watermarked preview links,",
-            "plus small thumbnails of the first results so you can check them visually. Free; no API key needed."
+            "Returns item IDs, titles, sizes, durations, formats with prices in USD, item page links and free watermarked",
+            "preview links, plus small thumbnails of the first results so you can check them visually. Free and read-only."
         ].join(" "),
         inputSchema: {
             type: "object",
@@ -93,13 +96,7 @@ const TOOLS = [
             required: ["query"],
             additionalProperties: false
         },
-        annotations: {
-            title: "Search Qwertystock",
-            readOnlyHint: true,
-            destructiveHint: false,
-            idempotentHint: true,
-            openWorldHint: true
-        }
+        annotations: { title: "Search Qwertystock", ...READ_ONLY }
     },
     {
         name: "get_item",
@@ -107,7 +104,7 @@ const TOOLS = [
         description: [
             "Look up one Qwertystock item by its numeric ID: title, description, keywords, size, duration,",
             "available formats with prices in USD, item page link, free watermarked preview link and a thumbnail.",
-            "Free; no API key needed."
+            "Free and read-only."
         ].join(" "),
         inputSchema: {
             type: "object",
@@ -125,53 +122,7 @@ const TOOLS = [
             required: ["item_id"],
             additionalProperties: false
         },
-        annotations: {
-            title: "Get a Qwertystock item",
-            readOnlyHint: true,
-            destructiveHint: false,
-            idempotentHint: true,
-            openWorldHint: true
-        }
-    },
-    {
-        name: "purchase_download",
-        title: "Buy and download a Qwertystock file",
-        description: [
-            "Buy a full-resolution, unwatermarked Qwertystock file and get its download link.",
-            "SPENDS MONEY from the user's Qwertystock balance. Call it only after the user has explicitly confirmed",
-            "the item ID, the format and the price in USD in this conversation, and pass that confirmed price as max_price_usd.",
-            "The tool refuses when the listed price is higher than max_price_usd. A purchase is permanent:",
-            "downloading the same or a lower format again costs nothing, and an upgrade charges only the difference.",
-            "Needs the API key from https://qwertystock.com/api in the plugin settings."
-        ].join(" "),
-        inputSchema: {
-            type: "object",
-            properties: {
-                item_id: {
-                    type: "integer",
-                    minimum: 1,
-                    description: "Qwertystock item ID."
-                },
-                format: {
-                    type: "string",
-                    description: "One of the item's formats, for example 240P, SD, HD, FHD, 4K or 8K for photos, illustrations and videos, or original for vectors."
-                },
-                max_price_usd: {
-                    type: "number",
-                    minimum: 0,
-                    description: "The price in USD that the user confirmed for this item and format."
-                }
-            },
-            required: ["item_id", "format", "max_price_usd"],
-            additionalProperties: false
-        },
-        annotations: {
-            title: "Buy and download a Qwertystock file",
-            readOnlyHint: false,
-            destructiveHint: true,
-            idempotentHint: true,
-            openWorldHint: true
-        }
+        annotations: { title: "Get a Qwertystock item", ...READ_ONLY }
     }
 ];
 
@@ -180,20 +131,8 @@ const TOOLS = [
 
 class ToolInputError extends Error {}
 
-function readApiKey() {
-    // .mcp.json always sets this variable from the plugin option ${user_config.api_key},
-    // so a key the user may have in their own shell environment is never picked up.
-    const raw = String(process.env.QWERTYSTOCK_PLUGIN_API_KEY || "").trim();
-    if (!raw || raw.startsWith("${")) return "";
-    return raw;
-}
-
 function log(...parts) {
     process.stderr.write(`[qwertystock] ${parts.join(" ")}\n`);
-}
-
-function clamp(value, min, max) {
-    return Math.min(Math.max(value, min), max);
 }
 
 function oneLine(value) {
@@ -240,30 +179,13 @@ function linkedSignal(parent, timeoutMs) {
     };
 }
 
-function sleep(ms, signal) {
-    return new Promise((resolve, reject) => {
-        if (signal?.aborted) return reject(signal.reason);
-        const timer = setTimeout(done, ms);
-        function done() {
-            signal?.removeEventListener("abort", onAbort);
-            resolve();
-        }
-        function onAbort() {
-            clearTimeout(timer);
-            reject(signal.reason);
-        }
-        signal?.addEventListener("abort", onAbort, { once: true });
-    });
-}
-
-async function apiRequest(method, path, { query, body, apiKey, signal } = {}) {
+async function apiRequest(method, path, { query, body, signal } = {}) {
     const url = new URL(path, API_ORIGIN);
     for (const [key, value] of Object.entries(query || {})) {
         if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
     }
     const headers = { "Accept": "application/json", "User-Agent": USER_AGENT };
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
     const timeout = linkedSignal(signal, REQUEST_TIMEOUT_MS);
     try {
@@ -346,7 +268,7 @@ function describeItem(item, index) {
     } else if (formats) {
         lines.push(`   Formats and prices (USD): ${formats}`);
     }
-    lines.push(`   Item page: ${itemPageUrl(item.id)}`);
+    lines.push(`   Item page (buy here): ${itemPageUrl(item.id)}`);
     const preview = previewUrl(item);
     if (preview) lines.push(`   Watermarked preview (free): ${preview}`);
     const keywords = Array.isArray(item.keywords) ? item.keywords.filter(Boolean).slice(0, 12) : [];
@@ -401,14 +323,15 @@ function textResult(text, extra = [], isError = false) {
     return { content: [{ type: "text", text }, ...extra], ...(isError ? { isError: true } : {}) };
 }
 
-// Uses the free preview delivery, which also returns the item's public details.
+// The free preview delivery also returns the item's public details and prices.
+// It never charges anything and is called without credentials.
 async function lookUpItem(itemId, signal) {
     const result = await apiRequest("POST", "/api/v1/download", {
         body: { item_id: itemId, format: "preview" },
         signal
     });
     const data = result.data || {};
-    if (result.status === 200 && data.ok && data.item) return { item: data.item, preview: data.url };
+    if (result.status === 200 && data.ok && data.item) return { item: data.item };
     if (result.status === 200 && data.status === "no_match") return { missing: true };
     throw new Error(describeApiFailure(result));
 }
@@ -486,121 +409,9 @@ async function getItem(args, signal) {
     return textResult(describeItem(found.item), images);
 }
 
-async function purchaseDownload(args, signal) {
-    const itemId = toInteger(args.item_id, "item_id", { min: 1 });
-    const requestedFormat = oneLine(args.format);
-    if (!requestedFormat) throw new ToolInputError("format is required, for example HD, 4K or original.");
-    const maxPrice = Number(args.max_price_usd);
-    if (!Number.isFinite(maxPrice) || maxPrice < 0) {
-        throw new ToolInputError("max_price_usd is required: the price in USD the user confirmed.");
-    }
-
-    const apiKey = readApiKey();
-    if (!apiKey) {
-        return textResult([
-            "No Qwertystock API key is configured, so paid downloads are not available.",
-            "The user can sign in at https://qwertystock.com/api, copy their API key (it starts with qs_live_)",
-            "and enter it in this plugin's settings; in Claude Code, run /plugin configure qwertystock@<marketplace>",
-            "(for example /plugin configure qwertystock@qwertystock) or open /plugin and configure the qwertystock plugin.",
-            `Or buy on the website instead: ${itemPageUrl(itemId)}`
-        ].join(" "), [], true);
-    }
-
-    // Free lookup first: confirm the format exists and check the listed price.
-    const found = await lookUpItem(itemId, signal);
-    if (found.missing) return textResult(`Qwertystock item #${itemId} was not found or is not available.`, [], true);
-    const item = found.item;
-    if (item.metadata_only || item.is_on_sale === false) {
-        return textResult(`Qwertystock item #${itemId} is not available for purchase right now.`, [], true);
-    }
-    const formats = Array.isArray(item.formats) ? item.formats : [];
-    const sized = SIZED_TYPES.has(item.type);
-    let format = formats.find(f => String(f).toLowerCase() === requestedFormat.toLowerCase());
-    if (!format && !sized && formats.length > 0 && requestedFormat.toLowerCase() === "original") format = formats[0];
-    if (!format) {
-        return textResult(
-            `Format "${requestedFormat}" is not available for #${itemId}. Available: ${formatsLine(item) || "none"}.`,
-            [], true
-        );
-    }
-    const listPrice = priceFor(item, format);
-    if (listPrice === undefined) {
-        return textResult(
-            `The API does not list a price for ${format} of #${itemId}, so it was not bought. Buy it on the website: ${itemPageUrl(itemId)}`,
-            [], true
-        );
-    }
-    if (listPrice > maxPrice + 1e-9) {
-        return textResult(
-            `Not bought: ${format} of #${itemId} costs ${formatUsd(listPrice)}, more than the confirmed ${formatUsd(maxPrice)}. ` +
-            "Confirm the actual price with the user, then call purchase_download again.",
-            [], true
-        );
-    }
-
-    // Vectors are delivered as their original file; the API expects "original" for them.
-    const apiFormat = sized ? format : "original";
-    const deadline = Date.now() + PURCHASE_WAIT_MS;
-    let result;
-    for (;;) {
-        result = await apiRequest("POST", "/api/v1/download", {
-            body: { item_id: itemId, format: apiFormat },
-            apiKey,
-            signal
-        });
-        const data = result.data || {};
-        if (result.status === 200 && data.status === "processing" && Date.now() < deadline) {
-            const wait = clamp(Number(data.retry_after_ms) || 5000, 2000, 15000);
-            await sleep(wait, signal);
-            continue;
-        }
-        break;
-    }
-
-    const data = result.data || {};
-    const label = `${format} of #${itemId} "${truncate(item.title, 120)}"`;
-    if (result.status === 200 && data.ok && (data.url || data.link) && data.status !== "processing") {
-        const charged = Number(data.charged);
-        const lines = [
-            `Ready: ${label}.`,
-            Number.isFinite(charged)
-                ? (charged === 0 ? "Charged $0 (the user already owns this format or a higher one)." : `Charged ${formatUsd(charged)}.`)
-                : "",
-            data.balance !== undefined ? `Balance left: ${formatUsd(data.balance)}.` : "",
-            `Download link (personal, do not share it publicly): ${data.url || data.link}`,
-            "Licence: Qwertystock Royalty-Free End User License Agreement, https://qwertystock.com/html/pages/royalty_free_license.html"
-        ];
-        return textResult(lines.filter(Boolean).join("\n"));
-    }
-    if (result.status === 200 && data.status === "processing") {
-        const progress = data.progress !== undefined ? ` Progress: ${oneLine(data.progress)}.` : "";
-        return textResult(
-            `Qwertystock is still preparing ${label}.${progress} Nothing is charged until the file is ready. ` +
-            "Call purchase_download again with the same arguments in a minute or two; it will not charge twice."
-        );
-    }
-    if (result.status === 402 || data.status === "insufficient_balance") {
-        return textResult(
-            `Not bought: the Qwertystock balance ${data.balance !== undefined ? `(${formatUsd(data.balance)}) ` : ""}` +
-            `is too low for ${label}${data.required !== undefined ? `, which needs ${formatUsd(data.required)}` : ""}. ` +
-            `Top up here: ${data.topup_url || `${API_ORIGIN}/profile?tab=account`}`,
-            [], true
-        );
-    }
-    if (data.status === "auth_required" || data.status === "scope_denied" || result.status === 401) {
-        return textResult(
-            "Qwertystock did not accept the configured API key for paid downloads. " +
-            "The user should open https://qwertystock.com/api, sign in, copy a current key and update it in this plugin's settings.",
-            [], true
-        );
-    }
-    return textResult(describeApiFailure(result), [], true);
-}
-
 const HANDLERS = {
     search_media: searchMedia,
-    get_item: getItem,
-    purchase_download: purchaseDownload
+    get_item: getItem
 };
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
   "name": "qwertystock",
   "displayName": "Qwertystock",
   "version": "1.0.0",
-  "description": "Search more than 1.5 million royalty-free stock photos, videos, illustrations and vectors on Qwertystock, check free watermarked previews, and buy full-resolution files from a conversation.",
+  "description": "Search more than 1.5 million royalty-free stock photos, videos, illustrations and vectors on Qwertystock, check free watermarked previews and prices, and pick the right file and licence for your project.",
   "author": {
     "name": "Qwertystock",
     "email": "support@qwertystock.com",
@@ -20,15 +20,5 @@
     "royalty-free",
     "images",
     "media-search"
-  ],
-  "userConfig": {
-    "api_key": {
-      "type": "string",
-      "title": "Qwertystock API key (optional)",
-      "description": "Needed only for paid full-resolution downloads. Sign in at https://qwertystock.com/api and copy your key (it starts with qs_live_). Search and watermarked previews work without it.",
-      "sensitive": true,
-      "required": false,
-      "default": ""
-    }
-  }
+  ]
 }

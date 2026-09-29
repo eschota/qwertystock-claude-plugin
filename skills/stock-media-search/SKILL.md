@@ -30,7 +30,7 @@ Qwertystock is a royalty-free stock marketplace with more than 1.5 million photo
 ## Rules
 
 - Previews and thumbnails carry a watermark. They are fine for mockups, drafts and client approval, not for final use.
-- Searching and previews are free. Never buy anything from this skill. When the user wants the full-resolution file or asks about licensing, follow the `stock-media-licensing` skill.
+- Searching and previews are free, and nothing in this plugin buys anything. When the user wants the full-resolution file or asks about licensing, follow the `stock-media-licensing` skill; the user buys on the item page.
 - Don't show internal ranking values such as semantic scores or distances.
 - Prices are in US dollars, per download and per format.
 

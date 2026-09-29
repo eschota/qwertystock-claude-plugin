@@ -1,6 +1,6 @@
 // Smoke test for the Qwertystock MCP server against the live public API.
 // Run from the repository root:  node tests/smoke-test.mjs
-// It makes free requests only: search and preview lookups. It never buys anything.
+// It makes free, read-only requests only: searches and item lookups.
 
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -10,8 +10,7 @@ import assert from "node:assert/strict";
 
 const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "server", "qwertystock-mcp.mjs");
 const server = spawn(process.execPath, [serverPath], {
-    stdio: ["pipe", "pipe", "inherit"],
-    env: { ...process.env, QWERTYSTOCK_PLUGIN_API_KEY: "" }
+    stdio: ["pipe", "pipe", "inherit"]
 });
 
 const pending = new Map();
@@ -53,7 +52,12 @@ async function main() {
 
     const list = await request("tools/list", {});
     const names = list.result.tools.map(tool => tool.name).sort();
-    assert.deepEqual(names, ["get_item", "purchase_download", "search_media"]);
+    assert.deepEqual(names, ["get_item", "search_media"]);
+    for (const tool of list.result.tools) {
+        assert.equal(tool.annotations.readOnlyHint, true, `${tool.name} must be read-only`);
+        assert.equal(tool.annotations.destructiveHint, false);
+        assert.ok(tool.annotations.title);
+    }
     console.log("ok  tools/list:", names.join(", "));
 
     const search = await request("tools/call", {
@@ -78,20 +82,12 @@ async function main() {
 
     const item = await request("tools/call", { name: "get_item", arguments: { item_id: Number(idMatch[1]) } });
     assert.ok(!item.result.isError, text(item.result));
-    assert.match(text(item.result), /Item page: https:\/\/qwertystock\.com\/item\?id=/);
+    assert.match(text(item.result), /Item page \(buy here\): https:\/\/qwertystock\.com\/item\?id=/);
     console.log("ok  get_item");
 
     const missing = await request("tools/call", { name: "get_item", arguments: { item_id: 999999999 } });
     assert.ok(missing.result.isError);
     console.log("ok  get_item: unknown ID reported as an error");
-
-    const purchase = await request("tools/call", {
-        name: "purchase_download",
-        arguments: { item_id: Number(idMatch[1]), format: "HD", max_price_usd: 2 }
-    });
-    assert.ok(purchase.result.isError);
-    assert.match(text(purchase.result), /No Qwertystock API key is configured/);
-    console.log("ok  purchase_download: refuses without an API key");
 
     const bad = await request("tools/call", { name: "search_media", arguments: { query: "cat", type: "gif" } });
     assert.ok(bad.result.isError);
