@@ -44,7 +44,7 @@ In Claude Code and Cowork you can also run the commands directly:
 Searching and previews are free and need no account. To buy full-resolution files:
 
 1. Sign in at [qwertystock.com/api](https://qwertystock.com/api) and copy your API key. It starts with `qs_live_`.
-2. Enter it in the plugin's settings. Claude Code asks for it when you enable the plugin; you can change it later under `/plugin`. Claude Code keeps it in your system's secure credential store, not in a settings file.
+2. Enter it in the plugin's settings: in Claude Code, run `/plugin configure qwertystock@<marketplace>`, for example `/plugin configure qwertystock@qwertystock` when you installed from this repository, or open `/plugin` and configure the plugin there. Claude Code keeps the key in your system's secure credential store, not in a settings file.
 3. Top up your Qwertystock balance on the website. Purchases are paid from that balance in US dollars.
 
 Claude asks you to confirm the item, format and price before every purchase, and the `purchase_download` tool refuses to buy when the listed price is higher than the price you confirmed. A purchase is permanent: downloading the same or a lower format of that item again is free, and upgrading to a higher format charges only the difference. Cowork doesn't prompt for plugin settings, so in Cowork, buy on the item page on the website.

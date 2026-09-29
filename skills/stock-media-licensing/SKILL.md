@@ -26,7 +26,7 @@ Handle the result:
 - **Ready**: give the user the download link and what was charged. A charge of $0 means they already own that format or a higher one. The link is personal, so don't publish it, paste it into shared documents or commit it to a repository.
 - **Still preparing**, which happens with videos: nothing is charged until the file is ready. Wait a minute, then call the tool again with the same arguments; a repeat never charges twice.
 - **Balance too low**: tell the user how much is needed and give them the top-up link from the result.
-- **No API key, or the key was rejected**: the user signs in at https://qwertystock.com/api, copies their API key (it starts with `qs_live_`) and enters it in the plugin's settings. In Claude Code they run `/plugin`, open the qwertystock plugin and configure it. Never ask the user to paste the key into the chat, and never print or log a key.
+- **No API key, or the key was rejected**: the user signs in at https://qwertystock.com/api, copies their API key (it starts with `qs_live_`) and enters it in the plugin's settings. In Claude Code they run `/plugin configure qwertystock@<marketplace>`, for example `/plugin configure qwertystock@qwertystock`, or open `/plugin` and configure the qwertystock plugin there. Never ask the user to paste the key into the chat, and never print or log a key.
 - **Tools not available**, for example in claude.ai chat: send the user to the item page `https://qwertystock.com/item?id=<id>` to buy it on the website.
 
 A purchase is permanent. Downloading the same or a lower format of the same item again is free, and moving up to a higher format charges only the difference.

@@ -500,7 +500,8 @@ async function purchaseDownload(args, signal) {
         return textResult([
             "No Qwertystock API key is configured, so paid downloads are not available.",
             "The user can sign in at https://qwertystock.com/api, copy their API key (it starts with qs_live_)",
-            "and enter it in this plugin's settings; in Claude Code, run /plugin, open the qwertystock plugin and configure it.",
+            "and enter it in this plugin's settings; in Claude Code, run /plugin configure qwertystock@<marketplace>",
+            "(for example /plugin configure qwertystock@qwertystock) or open /plugin and configure the qwertystock plugin.",
             `Or buy on the website instead: ${itemPageUrl(itemId)}`
         ].join(" "), [], true);
     }
