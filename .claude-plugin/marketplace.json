@@ -1,0 +1,17 @@
+{
+  "name": "qwertystock",
+  "owner": {
+    "name": "Qwertystock",
+    "email": "support@qwertystock.com"
+  },
+  "metadata": {
+    "description": "The Qwertystock plugin for Claude: royalty-free stock photos, videos, illustrations and vectors."
+  },
+  "plugins": [
+    {
+      "name": "qwertystock",
+      "source": "./",
+      "description": "Search more than 1.5 million royalty-free stock photos, videos, illustrations and vectors on Qwertystock, check free watermarked previews, and buy full-resolution files from a conversation."
+    }
+  ]
+}
